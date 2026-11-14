@@ -102,7 +102,18 @@ Tools used: `whoami`, `get_my_accounts`, `get_signals`, `write_note`.
 
 ## Deploy (Render)
 
+- **Build command:** `pip install -r requirements.txt`
+- **Start command:** `gunicorn app:app` (or `python app.py`, which reads Render's `PORT`)
+- **Environment:** set `AQ_TOKEN` to your token. The `.env` file isn't deployed.
 
+`data/` is gitignored, so a fresh deploy starts empty and the app fetches its own data, one call a minute:
+
+1. `get_my_accounts` saves `data/book.json`.
+2. `whoami` lists any new accounts (for example Kestrel, K).
+3. `get_all_paperwork` saves `data/paperwork_<id>.json` for each new account.
+4. After that, `get_signals` runs every minute, and `whoami` every 10 minutes.
+
+Until the book is saved, every page shows "Loading data, refresh in a minute". Render's disk is wiped on each deploy or restart, so this happens again each time (about three minutes).
 
 ## What it does not do yet
 

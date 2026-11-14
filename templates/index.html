@@ -7,6 +7,10 @@
   <a href="{{ url_for('signals_page') }}">{{ signal_count }} live signal{{ '' if signal_count == 1 else 's' }}</a>.
 </p>
 
+{% if steps %}
+  <p class="loading-note">Still loading: {{ steps | join('; ') }}. Refresh in a minute.</p>
+{% endif %}
+
 <div class="grid">
 {% for c in cards %}
   {% set a = c.acct %}

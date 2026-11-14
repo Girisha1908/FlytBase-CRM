@@ -14,6 +14,15 @@ Rules this file follows:
       3. every WHOAMI_EVERY minutes: whoami, and if it names an account we
          don't have, queue a book refresh plus that account's paperwork
       4. otherwise get_signals, appending new events to signals.json
+  * Fresh start (e.g. on Render, where data/ is empty because it's
+    gitignored): the worker fetches its own data, one call a minute:
+      minute 1  get_my_accounts  -> data/book.json   (only if it's missing)
+      minute 2  whoami           -> every account it names that we can't
+                                    show yet is queued
+      minute 3+ get_all_paperwork for each of those -> data/paperwork_<id>.json
+      then      get_signals every minute (whoami again every 10th minute)
+    Until data/book.json exists, pages show "Loading data, refresh in a minute".
+    The token comes from the AQ_TOKEN environment variable (.env locally).
 
 Run it with:   python app.py      then open http://127.0.0.1:5000
 """
@@ -22,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 import time
 import uuid
@@ -77,11 +87,22 @@ def write_json_atomic(path, data):
     os.replace(tmp, path)
 
 
+class DataLoading(Exception):
+    """data/book.json isn't there yet; the worker is fetching it."""
+
+
 def load_book():
     book = read_json(BOOK_FILE, None)
     if book is None:
-        abort(503, "data/book.json is missing. Run: python connect.py")
+        raise DataLoading()
     return book
+
+
+@app.errorhandler(DataLoading)
+def show_loading(_):
+    """While the first fetch runs, show a page that refreshes itself."""
+    status = current_status()
+    return render_template("loading.html", status=status, steps=status.get("steps", [])), 200
 
 
 def load_accounts():
@@ -426,6 +447,41 @@ def send_next_note():
 refresh_jobs = []
 # Accounts whose paperwork fetch failed this run, so we don't retry every 10 min.
 paperwork_failed = set()
+# whoami runs as soon as the queue is empty after startup, then every 10 min.
+whoami_state = {"due": True, "done_once": False}
+# When this run last saved book.json (a whoami right after doesn't refetch it).
+book_saved_at = [0.0]
+
+
+def publish_status():
+    """
+    Share the worker's status with every process: gunicorn may run several,
+    but only one runs the worker, so pages read this file instead of memory.
+    """
+    try:
+        write_json_atomic(DATA_DIR / ".worker_status.json",
+                          {**worker_status, "steps": loading_steps(), "pid": os.getpid()})
+    except OSError as e:
+        print(f"[worker] could not write status: {e}")
+
+
+def current_status():
+    """The worker's latest status, from whichever process runs it."""
+    shared = read_json(DATA_DIR / ".worker_status.json", None)
+    return shared if shared is not None else {**worker_status, "steps": loading_steps()}
+
+
+def loading_steps():
+    """What the worker still has to fetch, for the loading page and home page."""
+    steps = []
+    if not BOOK_FILE.exists() and ("book",) not in refresh_jobs:
+        steps.append("The account book (get_my_accounts)")
+    for job in refresh_jobs:
+        steps.append("The account book (get_my_accounts)" if job[0] == "book"
+                     else f"Paperwork for account {job[1]} (get_all_paperwork)")
+    if not whoami_state["done_once"]:
+        steps.append("New accounts (whoami)")
+    return steps
 
 
 def known_account_ids():
@@ -445,10 +501,15 @@ def check_whoami():
     named = {a.get("id") for a in me.get("new_accounts", []) if isinstance(a, dict)}
     named |= {p.get("account") for p in me.get("pack", []) if isinstance(p, dict)}
     new = sorted(i for i in named - known_account_ids() if i and i not in paperwork_failed)
-    if new and not refresh_jobs:
-        print(f"[whoami] new account(s) {new}: queuing a book refresh and their paperwork")
-        refresh_jobs.append(("book",))
+    queued = {j[1] for j in refresh_jobs if j[0] == "paperwork"}
+    new = [i for i in new if i not in queued]
+    if new:
+        # Refresh the book too, unless this run saved it in the last 10 minutes
+        # (on a fresh start it was fetched one minute ago).
+        if time.time() - book_saved_at[0] > WHOAMI_EVERY * POLL_SECONDS and ("book",) not in refresh_jobs:
+            refresh_jobs.append(("book",))
         refresh_jobs.extend(("paperwork", i) for i in new)
+        print(f"[whoami] new account(s) {new}: queued {refresh_jobs}")
     else:
         print("[whoami] no new accounts")
 
@@ -464,6 +525,7 @@ def run_refresh_job():
             if BOOK_FILE.exists():
                 write_json_atomic(DATA_DIR / "book.prev.json", read_json(BOOK_FILE, {}))
             write_json_atomic(BOOK_FILE, book)
+        book_saved_at[0] = time.time()
         print("[refresh] saved data/book.json")
     else:
         account_id = job[1]
@@ -488,27 +550,74 @@ def run_refresh_job():
 
 def worker():
     """
-    Forever: one MCP call per minute, then wait. Priority: a queued note, a
-    queued refresh job, whoami every WHOAMI_EVERY minutes, else signals.
+    Forever: one MCP call per minute, then wait 61s. Priority: a queued note,
+    a queued fetch, whoami (right after startup, then every 10 minutes),
+    else signals.
     """
+    if not BOOK_FILE.exists():
+        refresh_jobs.insert(0, ("book",))  # fresh start: fetch the book first
+        print("[startup] data/book.json missing: fetching it first")
+    publish_status()
     tick = 0
     while True:
         tick += 1
         try:
             if send_next_note() or run_refresh_job():
                 pass
-            elif tick % WHOAMI_EVERY == 1:  # the first minute, then every 10th
-                check_whoami()
+            elif whoami_state["due"]:
+                check_whoami()  # if this is rate limited, it stays due
+                whoami_state.update(due=False, done_once=True, next_tick=tick + WHOAMI_EVERY)
             else:
+                if tick >= whoami_state.get("next_tick", 0) and whoami_state["done_once"]:
+                    whoami_state["due"] = True  # whoami takes the next free minute
                 n = poll_signals_once()
                 print(f"[signals] checked, {n} new event(s)")
         except RateLimited as e:
             worker_status["last_error"] = f"Rate limited: {e}"
-            print("[signals] rate limited, will retry next minute")
+            print("[worker] rate limited, will retry next minute")
         except Exception as e:  # keep the thread alive on any network error
             worker_status["last_error"] = str(e)
-            print(f"[signals] error: {e}")
+            print(f"[worker] error: {e}")
+        publish_status()
         time.sleep(POLL_SECONDS)
+
+
+def _take_worker_lock():
+    """
+    Only one process may run the worker, or two of them would share one
+    call a minute. Gunicorn can run several processes, so the first one to
+    lock data/.worker.lock wins. The OS releases the lock if it dies.
+    """
+    DATA_DIR.mkdir(exist_ok=True)
+    handle = open(DATA_DIR / ".worker.lock", "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle  # keep it open for the life of the process
+
+
+_worker_lock = None
+
+
+def start_worker_once():
+    """Start the background worker, unless another process already runs it."""
+    global _worker_lock
+    if _worker_lock is not None:
+        return
+    _worker_lock = _take_worker_lock()
+    if _worker_lock is None:
+        print(f"[worker] another process runs the worker; pid {os.getpid()} only serves pages")
+        return
+    print(f"[worker] started in pid {os.getpid()}")
+    start_worker()
 
 
 def start_worker():
@@ -578,7 +687,8 @@ def index():
             "summary": plain_summary(segments),
             "claims": [s["claim"] for s in segments if "claim" in s],
         })
-    return render_template("index.html", book=book, signal_count=len(signals), cards=cards, idx=idx)
+    return render_template("index.html", book=book, signal_count=len(signals), cards=cards, idx=idx,
+                           steps=current_status().get("steps", []))
 
 
 @app.route("/account/<account_id>")
@@ -596,7 +706,7 @@ def account(account_id):
         story=story_segments(acct, brief, idx), missing=check_brief(brief, idx),
         files=[f for f in book.get("files", []) if f.get("account") == account_id],
         paper=paper, paperwork_only=acct.get("source") == "paperwork",
-        notes=list(reversed(load_outbox(account_id))), status=worker_status,
+        notes=list(reversed(load_outbox(account_id))), status=current_status(),
     )
 
 
@@ -622,13 +732,14 @@ def save_next_steps(account_id):
 
 @app.route("/signals")
 def signals_page():
-    return render_template("signals.html", signals=load_signals(), status=worker_status)
+    return render_template("signals.html", signals=load_signals(), status=current_status())
 
 
 @app.route("/api/signals")
 def signals_api():
     """Local signals, newest first. Optional ?account=A. Never calls the MCP."""
-    return jsonify(signals=load_signals(request.args.get("account")), status=worker_status)
+    status = {k: v for k, v in current_status().items() if k in ("last_check", "last_error", "new_last_check")}
+    return jsonify(signals=load_signals(request.args.get("account")), status=status)
 
 
 @app.route("/api/notes/<account_id>")
@@ -652,9 +763,19 @@ def warn_about_briefs():
             print(f"[briefs] account {acct_id} cites ids not in book/signals: {missing}")
 
 
+# Under gunicorn (Render: "gunicorn app:app") this file is imported, not run,
+# so start the worker on import there. Plain imports (tests, scripts) don't.
+if "gunicorn" in os.path.basename(sys.argv[0] if sys.argv else ""):
+    warn_about_briefs()
+    start_worker_once()
+
+
 if __name__ == "__main__":
     warn_about_briefs()
-    start_worker()
+    start_worker_once()
+    # Render (or any host) passes PORT; locally it's 127.0.0.1:5000.
     # use_reloader=False: the reloader runs this file twice, which would start
     # two workers and break the one-call-a-minute limit.
-    app.run(debug=True, use_reloader=False)
+    port = os.environ.get("PORT")
+    app.run(host="0.0.0.0" if port else "127.0.0.1", port=int(port or 5000),
+            debug=not port, use_reloader=False)

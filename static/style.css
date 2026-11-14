@@ -280,3 +280,8 @@ details summary { cursor: pointer; }
 .paper-rec { margin: 12px 0; }
 .paper-rec h4 { margin: 0 0 4px; color: var(--ink); }
 .paper-rec .record { max-height: 320px; overflow: auto; }
+
+/* ---- first-start loading ------------------------------------------------ */
+.loading { max-width: 640px; margin: 48px auto; background: var(--sheet); border-radius: 10px; padding: 24px 28px; border-top: 6px solid var(--ink); }
+.loading h2 { font-size: 1rem; margin: 20px 0 6px; }
+.loading-note { background: var(--claim-bg); border: 1px dashed var(--claim); border-radius: 6px; padding: 8px 12px; }

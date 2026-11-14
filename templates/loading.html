@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Loading · FlytBase CRM{% endblock %}
+{% block content %}
+{# Shown until data/book.json exists. Reloads itself every 60 seconds. #}
+<meta http-equiv="refresh" content="60">
+<section class="loading">
+  <h1>Loading data, refresh in a minute</h1>
+  <p>The app is fetching its account data. The server allows one call a minute, so this takes a few minutes on a fresh start. This page reloads itself every minute.</p>
+
+  {% if steps %}
+    <h2>Still to fetch</h2>
+    <ol>{% for s in steps %}<li>{{ s }}</li>{% endfor %}</ol>
+  {% endif %}
+
+  {% if status.last_error %}
+    <p class="alert">Last attempt: {{ status.last_error }}</p>
+  {% endif %}
+</section>
+{% endblock %}

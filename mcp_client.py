@@ -44,7 +44,8 @@ def _is_rate_limit(text):
 def _token():
     token = os.environ.get("AQ_TOKEN")
     if not token:
-        raise RuntimeError("AQ_TOKEN is not set. Add it to your .env file.")
+        raise RuntimeError("AQ_TOKEN is not set. Set it as an environment variable "
+                           "(on Render: Environment), or in .env when running locally.")
     return token
 
 
