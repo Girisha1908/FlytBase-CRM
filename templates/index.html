@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1>Your book</h1>
+<p class="muted">
+  Snapshot exported {{ book.exported_at | when }}.
+  <a href="{{ url_for('signals_page') }}">{{ signal_count }} live signal{{ '' if signal_count == 1 else 's' }}</a>.
+  Amounts as given in book.json, which states no currency.
+</p>
+
+<div class="grid">
+{% for a in book.accounts %}
+  {% set pipeline = a.opportunities | map(attribute='worth_up_to') | select | sum %}
+  <div class="card">
+    <div class="card-head">
+      <span class="tag">{{ a.id }}</span>
+      <h2><a href="{{ url_for('account', account_id=a.id) }}">{{ a.name }}</a></h2>
+    </div>
+    <p class="story">{{ m.story(stories[a.id], idx) }}</p>
+    <dl class="stats">
+      <div><dt>Worth up to</dt><dd class="num">{{ pipeline | money }}</dd></div>
+      <div><dt>Deals</dt><dd>{{ a.opportunities | length }}</dd></div>
+      <div><dt>People</dt><dd>{{ a.stakeholders | length }}</dd></div>
+      <div><dt>Facts</dt><dd>{{ a.facts | length }}</dd></div>
+    </dl>
+    <p><a href="{{ url_for('account', account_id=a.id) }}">Open the Monday brief</a></p>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ acct.name }} · FlytBase CRM{% endblock %}
+{% block content %}
+<p class="back"><a href="{{ url_for('index') }}">All accounts</a></p>
+
+<header class="acct-head">
+  <span class="tag">{{ acct.id }}</span>
+  <h1>{{ acct.name }}</h1>
+  <p class="story">{{ m.story(story, idx) }}</p>
+  <p class="muted small">Book snapshot exported {{ book.exported_at | when }}. Amounts are as given in book.json, which states no currency.</p>
+</header>
+
+{% if missing %}
+  <div class="alert">The brief cites ids that aren't in book.json or signals.json: {{ missing | join(', ') }}. Treat those lines as unsourced.</div>
+{% endif %}
+
+{# ---------------------------------------------------------------- live #}
+<section class="live" aria-live="polite">
+  <div class="live-head">
+    <h2>Live signals</h2>
+    <span class="muted small" id="live-status">Last check {{ status.last_check | when or 'not yet' }}. Refreshes every 60 seconds.</span>
+  </div>
+  <ol class="live-list" id="live-list">
+    {% for s in signals %}
+      <li id="sig-{{ s.id }}">
+        <time>{{ s.dated | when }}</time>
+        <div><strong>{{ s.title }}</strong><p>{{ s.summary }}</p>
+          <span class="muted small">Received {{ s._received_at | when }} {{ m.sources([s.id], idx) }}</span></div>
+      </li>
+    {% else %}
+      <li class="empty">No live signals for this account yet. The app checks once a minute.</li>
+    {% endfor %}
+  </ol>
+</section>
+
+{# =============================================================== brief #}
+<article class="brief">
+  <h2 class="brief-title">Monday brief</h2>
+
+  {# ------------------------------------------------ 1. book worth #}
+  <section class="block" id="worth">
+    <h3>Book worth</h3>
+    <div class="totals">
+      <div class="total total-backed">
+        <span class="total-label">Backed</span>
+        <span class="total-num">{{ worth.backed_total | money }}</span>
+        <span class="total-src">Won or agreed only. {{ m.sources(worth.backed_ids, idx) }}</span>
+      </div>
+      <div class="total total-open">
+        <span class="total-label">Not yet backed</span>
+        <span class="total-num">{{ worth.not_backed_total | money }}</span>
+        <span class="total-src">“Worth up to” and open offers. {{ m.sources(worth.not_backed_ids, idx) }}</span>
+      </div>
+    </div>
+    <div class="scroll">
+    <table class="worth">
+      <thead><tr><th>Deal or offer</th><th class="r">Backed</th><th class="r">Not yet backed</th><th>Why not backed</th></tr></thead>
+      <tbody>
+      {% for r in worth.rows %}
+        <tr class="{{ 'is-declined' if r.declined_value is not none }}">
+          <td><span class="kind">{{ r.kind }}</span> {{ r.title }} {{ m.cite(r.id, idx) }}</td>
+          <td class="r num">{% if r.backed is not none %}{{ r.backed | money }}{% endif %}</td>
+          <td class="r num">
+            {%- if r.not_backed is not none %}{{ r.not_backed | money }}
+            {%- elif r.declined_value is not none %}<s>{{ r.declined_value | money }}</s>
+            {%- elif r.backed is none %}<span class="muted">not sized</span>{% endif -%}
+          </td>
+          <td class="{{ 'reason-blocked' if r.blocker_open }}">
+            {%- if r.blocker_open %}<span class="flag">Open blocker</span> {% endif %}{{ r.reason }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="muted small">Totals are simple sums. Deals and offers may overlap (for example, an offer can be part of a deal); the book doesn't say.</p>
+  </section>
+
+  {# ------------------------------------------------ 2. power map #}
+  <section class="block" id="power">
+    <h3>Power map</h3>
+    <div class="scroll">
+    <table class="power">
+      <thead><tr><th>Deal</th><th>Decides</th><th>Pays</th><th>Uses it</th><th>Could block it</th></tr></thead>
+      <tbody>
+      {% for deal_id, roles in brief.power_map.items() %}
+        <tr>
+          <th scope="row">{{ idx[deal_id][1].title if deal_id in idx else deal_id }} {{ m.cite(deal_id, idx) }}</th>
+          {% for role in ['decides', 'pays', 'uses', 'blocks'] %}
+            {% set cell = roles[role] %}
+            <td class="{{ 'is-unknown' if not cell.people }}">
+              {% if cell.people %}
+                {% for p in cell.people %}{{ m.person(p, idx) }}{% endfor %}
+              {% else %}
+                <span class="unknown">Unknown</span>
+              {% endif %}
+              {% if cell.note %}<p class="note">{{ cell.note }}</p>{% endif %}
+              {% if cell.people or cell.src %}<p class="note">{{ m.table_ids(cell.people + cell.src, idx) }}</p>{% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {# ------------------------------------------------ 3. moves #}
+  <section class="block" id="next-steps">
+    <h3>First 3 moves</h3>
+    <ol class="moves">
+      {% for mv in moves %}
+        <li>
+          <p class="move-do">{{ mv.do }}</p>
+          <dl class="move-meta">
+            <div><dt>Owner</dt><dd>{{ mv.owner }}</dd></div>
+            <div><dt>When</dt><dd>{{ mv.when_r.text }}
+              {%- if mv.when_r.moves_left is not none %} <span class="flag">{{ mv.when_r.moves_left }} moves left</span>{% endif %}
+              {{ m.sources(mv.when_r.src, idx) }}</dd></div>
+            <div><dt>Moves</dt><dd>{{ idx[mv.deal][1].title if mv.deal in idx else mv.deal }} {{ m.sources([mv.deal], idx) }}</dd></div>
+            <div><dt>Sources</dt><dd>{{ m.sources(mv.src, idx) }}</dd></div>
+          </dl>
+        </li>
+      {% endfor %}
+    </ol>
+
+    <form method="post" action="{{ url_for('save_next_steps', account_id=acct.id) }}" class="save">
+      <button type="submit">Save next steps</button>
+      <span class="muted small">Sends these three moves to the CRM as a “next_step” note. Notes share the one-call-a-minute limit, so it can take up to a minute.</span>
+    </form>
+    <ul class="notes" id="notes">
+      {% for n in notes[:3] %}
+        <li class="note-{{ n.status }}">
+          {{ {'queued': 'Waiting to send', 'sent': 'Saved', 'failed': 'Not saved'}[n.status] }}
+          · queued {{ n.created | when }}{% if n.sent_at %} · saved {{ n.sent_at | when }}{% endif %}
+          {% if n.error %}<span class="err">{{ n.error }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <div class="pair">
+    {# ------------------------------------------------ 4. risks #}
+    <section class="block" id="risks">
+      <h3>What could go wrong</h3>
+
+      <h4>Deadlines</h4>
+      <ul class="plain">
+        {% for d in risks.deadlines %}
+          <li><strong>{{ d.name }}.</strong>
+            {% if d.moves_left is not none %}<span class="flag">{{ d.moves_left }} moves left</span>
+            {% else %}<span class="muted">Moves left not stated.</span>{% endif %}
+            {% if d.deal %}{{ m.sources([d.deal], idx) }}{% endif %}</li>
+        {% else %}<li class="muted">No open deadlines in the book.</li>{% endfor %}
+        {% for s in risks.signals %}
+          <li><strong>{{ s.title }}</strong> <span class="muted">({{ s.dated | when }})</span> {{ m.sources([s.id], idx) }}</li>
+        {% endfor %}
+      </ul>
+
+      <h4>Neutral or guarded people</h4>
+      <ul class="plain">
+        {% for p in risks.people %}
+          <li>{{ m.person(p.id, idx) }} <span class="muted">{{ p.role }}</span> {{ m.sources([p.id], idx) }}</li>
+        {% else %}<li class="muted">None.</li>{% endfor %}
+      </ul>
+
+      <h4>Open blockers</h4>
+      <ul class="plain">
+        {% for o in risks.blockers %}
+          <li>{{ o.blocker.text }}. <span class="muted">{{ o.title }}</span> {{ m.sources([o.id], idx) }}</li>
+        {% else %}<li class="muted">None.</li>{% endfor %}
+      </ul>
+
+      <h4>Declined offers</h4>
+      <ul class="plain">
+        {% for x in risks.declined %}
+          <li>{{ x.title }}, <span class="num">{{ x.value | money }}</span>, declined by {{ x.pitch_to }} {{ m.sources([x.id], idx) }}</li>
+        {% else %}<li class="muted">None.</li>{% endfor %}
+      </ul>
+    </section>
+
+    {# ------------------------------------------------ 5. gaps #}
+    <section class="block" id="gaps">
+      <h3>What we don't know</h3>
+      <ul class="gaps">
+        {% for g in brief.gaps %}
+          <li>
+            <strong>{{ g.gap }}</strong>
+            <p>{{ g.why }} {{ m.sources(g.src, idx) }}</p>
+            {% set ns = namespace(ids=[]) %}
+            <p class="who">Could fill it:
+              {% for w in g.who %}
+                {%- if w.id %}{% set ns.ids = ns.ids + [w.id] %}{{ m.person(w.id, idx) }}{% if w.note %} <span class="muted">({{ w.note }})</span>{% endif %}
+                {%- else %}{% set ns.ids = ns.ids + (w.src or []) %}{{ w.text }}{% endif %}{% if not loop.last %}; {% endif %}
+              {% endfor %}
+              {{ m.sources(ns.ids, idx) }}
+            </p>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</article>
+
+{# =============================================================== raw data #}
+<section class="raw">
+  <h2>Opportunities</h2>
+  <div class="grid">
+  {% for o in acct.opportunities %}
+    <div class="card" id="deal-{{ o.id }}">
+      <div class="card-head">
+        <span class="stage stage-{{ o.stage }}">{{ o.stage }}</span>
+        <h3>{{ o.title }}</h3>
+      </div>
+      <p><span class="muted">Worth up to</span> <span class="num">{{ o.worth_up_to | money }}</span> {{ m.sources([o.id], idx) }}</p>
+      {% if o.blocker %}
+        <p class="blocker {{ o.blocker.status }}">Blocker ({{ o.blocker.status }}): {{ o.blocker.text }}</p>
+      {% endif %}
+      {% if o.deadline %}<p><span class="muted">Deadline</span> {{ o.deadline.text }}</p>{% endif %}
+      {% if o.evidence %}
+        <details>
+          <summary>Evidence ({{ o.evidence | length }})</summary>
+          <ul class="plain">
+          {% for ev in o.evidence %}
+            {% set e = idx.get(ev) %}
+            <li>{% if e and e[0] == 'fact' %}{{ m.fact_text(e[1]) }}{% elif e %}File: {{ e[1].title }}{% endif %} {{ m.sources([ev], idx) }}</li>
+          {% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+
+  <h2>Offers</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Offer</th><th>Pitch to</th><th class="r">Value</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for of in acct.offers %}
+      <tr id="offer-{{ of.id }}"><td>{{ of.title }} {{ m.cite(of.id, idx) }}</td><td>{{ of.pitch_to }}</td>
+          <td class="r num">{{ of.value | money }}</td>
+          <td><span class="stage stage-{{ of.status }}">{{ of.status }}</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+
+  <h2>Stakeholders</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Name</th><th>Role</th><th>Relationship</th><th>Available</th></tr></thead>
+    <tbody>
+    {% for s in acct.stakeholders %}
+      <tr id="person-{{ s.id }}"><td>{{ s.name }}</td><td>{{ s.role }}</td>
+          <td><span class="rel rel-{{ s.relationship }}">{{ s.relationship }}</span></td>
+          <td>{{ 'Yes' if s.available else 'No' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+
+  <details class="evidence" id="evidence">
+    <summary><h2>Evidence</h2> <span class="muted">{{ acct.facts | length }} facts, {{ files | length }} files</span></summary>
+    <div class="scroll"><table class="facts">
+      <thead><tr><th>Minute</th><th>Fact</th><th>Said by</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for f in acct.facts | sort(attribute='learned_at_minute') %}
+        <tr id="ev-{{ f.id }}" class="{{ 'is-claim' if f.status == 'claim' }}">
+          <td class="num">{{ f.learned_at_minute }}</td>
+          <td>{% if f.status == 'claim' %}<span class="claim-label">Unverified claim:</span> {% endif %}{{ f.text }} {{ m.cite(f.id, idx) }}</td>
+          <td>{{ f.said_by }}</td>
+          <td><span class="status status-{{ f.status }}">{{ 'unverified claim' if f.status == 'claim' else f.status }}</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% if files %}
+      <h3>Files</h3>
+      <ul class="plain">{% for f in files %}<li id="ev-{{ f.id }}">{{ f.title }} <span class="muted">{{ f.path }}</span> {{ m.sources([f.id], idx) }}</li>{% endfor %}</ul>
+    {% endif %}
+  </details>
+</section>
+
+<script>
+  // A source chip pointing into a closed <details> opens it before jumping.
+  document.addEventListener("click", e => {
+    const a = e.target.closest("a.cite");
+    if (!a) return;
+    const el = document.querySelector(a.getAttribute("href"));
+    if (!el) return;
+    for (let d = el.closest("details"); d; d = d.parentElement.closest("details")) d.open = true;
+  });
+
+  // Live signals and note status refresh every 60 seconds from this app's own
+  // endpoints, which read local files only. Nothing here calls the MCP server.
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const fmt = iso => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    const opts = {day: "2-digit", month: "short", year: "numeric", timeZone: "UTC"};
+    return iso.includes("T")
+      ? d.toLocaleString("en-GB", {...opts, hour: "2-digit", minute: "2-digit"}) + " UTC"
+      : d.toLocaleDateString("en-GB", opts);
+  };
+  async function refresh() {
+    try {
+      const r = await fetch("{{ url_for('signals_api', account=acct.id) }}");
+      const { signals, status } = await r.json();
+      document.getElementById("live-status").textContent =
+        "Last check " + (fmt(status.last_check) || "not yet") + ". Refreshes every 60 seconds." +
+        (status.last_error ? " " + status.last_error : "");
+      document.getElementById("live-list").innerHTML = signals.length
+        ? signals.map(s => `<li id="sig-${esc(s.id)}"><time>${esc(fmt(s.dated))}</time><div>
+            <strong>${esc(s.title)}</strong><p>${esc(s.summary)}</p>
+            <span class="muted small">Received ${esc(fmt(s._received_at))} <span class="src"><button type="button" class="src-btn" aria-expanded="false" aria-label="Show sources: ${esc(s.id)}"><span aria-hidden="true">ⓘ</span> sources</button><span class="src-list" hidden><span class="src-row"><a class="cite cite-signal" href="#sig-${esc(s.id)}">${esc(s.id)}</a><span class="src-desc">Signal: ${esc(s.title)}</span></span></span></span></span></div></li>`).join("")
+        : '<li class="empty">No live signals for this account yet. The app checks once a minute.</li>';
+
+      const n = await (await fetch("{{ url_for('notes_api', account_id=acct.id) }}")).json();
+      const label = {queued: "Waiting to send", sent: "Saved", failed: "Not saved"};
+      document.getElementById("notes").innerHTML = n.notes.slice(0, 3).map(x =>
+        `<li class="note-${esc(x.status)}">${label[x.status] || esc(x.status)} · queued ${esc(fmt(x.created))}` +
+        (x.sent_at ? ` · saved ${esc(fmt(x.sent_at))}` : "") +
+        (x.error ? ` <span class="err">${esc(x.error)}</span>` : "") + "</li>").join("");
+    } catch (e) { /* server restarting; try again next tick */ }
+  }
+  setInterval(refresh, 60000);
+</script>
+{% endblock %}

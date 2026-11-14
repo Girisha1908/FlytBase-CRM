@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Signals · FlytBase CRM{% endblock %}
+{% block content %}
+<h1>Live signals</h1>
+<p class="muted" id="status">
+  Last check {{ status.last_check | when or 'not yet' }}. Newest first, refreshes every 60 seconds.
+  {% if status.last_error %}<span class="err">{{ status.last_error }}</span>{% endif %}
+</p>
+
+<ol class="live-list wide" id="list">
+{% for s in signals %}
+  <li>
+    <time>{{ s.dated | when }}</time>
+    <div>
+      <strong>{{ s.title }}</strong> <span class="tag">{{ s.account }}</span>
+      <p>{{ s.summary }}</p>
+      <span class="muted small">Received {{ s._received_at | when }} · {{ s.id }}</span>
+      {% if s.records %}
+        <details><summary>Records ({{ s.records | length }})</summary>
+          {% for r in s.records %}<pre class="record">{{ r.text }}</pre>{% endfor %}
+        </details>
+      {% endif %}
+    </div>
+  </li>
+{% else %}
+  <li class="empty">No signals yet. The app checks once a minute.</li>
+{% endfor %}
+</ol>
+
+<script>
+  // Re-read the local signals file every 60s (never calls the MCP server).
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const fmt = iso => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    const o = {day: "2-digit", month: "short", year: "numeric", timeZone: "UTC"};
+    return iso.includes("T") ? d.toLocaleString("en-GB", {...o, hour: "2-digit", minute: "2-digit"}) + " UTC"
+                             : d.toLocaleDateString("en-GB", o);
+  };
+  setInterval(async () => {
+    try {
+      const { signals, status } = await (await fetch("{{ url_for('signals_api') }}")).json();
+      document.getElementById("status").textContent = "Last check " + (fmt(status.last_check) || "not yet") +
+        ". Newest first, refreshes every 60 seconds." + (status.last_error ? " " + status.last_error : "");
+      document.getElementById("list").innerHTML = signals.length ? signals.map(s => `
+        <li><time>${esc(fmt(s.dated))}</time><div>
+          <strong>${esc(s.title)}</strong> <span class="tag">${esc(s.account)}</span>
+          <p>${esc(s.summary)}</p>
+          <span class="muted small">Received ${esc(fmt(s._received_at))} · ${esc(s.id)}</span>
+          ${(s.records || []).length ? `<details><summary>Records (${s.records.length})</summary>${
+            s.records.map(r => `<pre class="record">${esc(r.text)}</pre>`).join("")}</details>` : ""}
+        </div></li>`).join("") : '<li class="empty">No signals yet. The app checks once a minute.</li>';
+    } catch (e) { /* try again next tick */ }
+  }, 60000);
+</script>
+{% endblock %}

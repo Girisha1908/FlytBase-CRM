@@ -1,0 +1,70 @@
+{# Shared bits for the brief. idx maps id -> (kind, record) from book/signals. #}
+
+{# One source id as a chip that jumps to the record in the evidence below. #}
+{% macro cite(id, idx) -%}
+  {%- set entry = idx.get(id) -%}
+  {%- if entry -%}
+    {%- set prefix = {'fact': 'ev', 'file': 'ev', 'deal': 'deal', 'offer': 'offer', 'person': 'person', 'signal': 'sig'}[entry[0]] -%}
+    <a class="cite cite-{{ entry[0] }}{% if entry[0] == 'fact' and entry[1].status == 'claim' %} cite-claim{% endif %}"
+       href="#{{ prefix }}-{{ id }}" title="{{ entry[0] }}: {{ entry[1].text or entry[1].title or entry[1].name or id }}">{{ id }}</a>
+  {%- else -%}
+    <span class="cite cite-missing" title="This id is not in book.json or signals.json">{{ id }}?</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{# One line inside the popover: the id chip plus what it is. #}
+{% macro src_row(id, idx) -%}
+  {%- set entry = idx.get(id) -%}
+  <span class="src-row">{{ cite(id, idx) }}
+    <span class="src-desc">
+      {%- if entry -%}
+        {%- set rec = entry[1] -%}
+        {%- if entry[0] == 'fact' and rec.status == 'claim' %}Unverified claim, {{ rec.said_by }}: {% elif entry[0] == 'fact' %}{{ rec.status | capitalize }} fact, {{ rec.said_by }}: {% elif entry[0] == 'person' %}Person: {% else %}{{ entry[0] | capitalize }}: {% endif -%}
+        {{ (rec.text or rec.title or rec.name or id) | truncate(110) }}
+      {%- else -%}Not found in book.json or signals.json{%- endif -%}
+    </span></span>
+{%- endmacro %}
+
+{# "ⓘ sources": the ids live in a hidden list; base.html shows it as a popover. #}
+{% macro sources(ids, idx) -%}
+  {%- if ids -%}
+  <span class="src"><button type="button" class="src-btn" aria-expanded="false"
+    aria-label="Show sources: {{ ids | join(', ') }}"><span aria-hidden="true">ⓘ</span> sources</button><span class="src-list" hidden>
+    {%- for i in ids %}{{ src_row(i, idx) }}{% endfor -%}
+  </span></span>
+  {%- endif -%}
+{%- endmacro %}
+
+{# In tables: the first id inline, any others behind "ⓘ sources". #}
+{% macro table_ids(ids, idx) -%}
+  {%- if ids -%}{{ cite(ids[0], idx) }}{% if ids | length > 1 %} {{ sources(ids[1:], idx) }}{% endif %}{%- endif -%}
+{%- endmacro %}
+
+{# A stakeholder: name and relationship from book.json. Id goes in sources. #}
+{% macro person(id, idx) -%}
+  {%- set p = idx.get(id, (None, None))[1] -%}
+  {%- if p -%}
+    <span class="person"><span class="person-name">{{ p.name }}</span>
+    <span class="rel rel-{{ p.relationship }}">{{ p.relationship }}</span></span>
+  {%- else -%}{{ cite(id, idx) }}{%- endif -%}
+{%- endmacro %}
+
+{# A fact. "claim" facts are never shown as fact. #}
+{% macro fact_text(f) -%}
+  {%- if f.status == 'claim' -%}
+    <span class="claim"><span class="claim-label">Unverified claim by {{ f.said_by }}:</span> “{{ f.text }}”</span>
+  {%- else -%}
+    “{{ f.text }}” <span class="muted">{{ f.said_by }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{# The official story, with claim phrases marked as such. #}
+{% macro story(segments, idx) -%}
+  {%- for s in segments -%}
+    {%- if s.claim -%}
+      <span class="claim" title="Unverified claim by {{ s.said_by }}"><s class="claim-phrase">{{ s.text }}</s>
+      <span class="claim-label">Unverified claim by {{ s.said_by }}</span></span> {{ sources([s.claim], idx) }}
+      <span class="verified-note"><strong>Verified:</strong> {{ idx[s.counter][1].text if s.counter in idx else '' }}</span> {{ sources([s.counter], idx) }}
+    {%- else -%}{{ s.text }}{%- endif -%}
+  {%- endfor -%}
+{%- endmacro %}

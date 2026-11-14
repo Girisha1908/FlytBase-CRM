@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}FlytBase CRM{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="{{ url_for('index') }}">FlytBase CRM</a>
+    <nav>
+      <a href="{{ url_for('index') }}">Accounts</a>
+      <a href="{{ url_for('signals_page') }}">Signals</a>
+    </nav>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+
+  <script>
+    // "ⓘ sources" popover. Each link keeps its ids in a hidden .src-list next
+    // to it; one shared popover shows them on hover, focus or click. It is
+    // fixed-positioned so tables that scroll sideways don't clip it.
+    (() => {
+      const pop = document.createElement("div");
+      pop.id = "src-pop"; pop.hidden = true;
+      document.body.append(pop);
+      let owner = null, pinned = false, hideTimer;
+
+      function place(btn) {
+        const r = btn.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+        const left = Math.max(8, Math.min(r.left, innerWidth - w - 8));
+        let top = r.bottom + 6;
+        if (top + h > innerHeight - 8 && r.top - h - 6 > 8) top = r.top - h - 6;
+        pop.style.left = left + "px"; pop.style.top = top + "px";
+      }
+      function show(btn) {
+        clearTimeout(hideTimer);
+        if (owner && owner !== btn) owner.setAttribute("aria-expanded", "false");
+        owner = btn;
+        pop.innerHTML = btn.nextElementSibling.innerHTML;
+        pop.hidden = false;
+        btn.setAttribute("aria-expanded", "true");
+        place(btn);
+      }
+      function hide() {
+        if (owner) owner.setAttribute("aria-expanded", "false");
+        pop.hidden = true; owner = null; pinned = false;
+      }
+
+      document.addEventListener("mouseover", e => {
+        const btn = e.target.closest(".src-btn");
+        if (btn && !pinned) show(btn);
+        else if (e.target.closest("#src-pop")) clearTimeout(hideTimer);
+      });
+      document.addEventListener("mouseout", e => {
+        if (!pinned && e.target.closest(".src-btn, #src-pop")) hideTimer = setTimeout(hide, 250);
+      });
+      document.addEventListener("focusin", e => {
+        const btn = e.target.closest(".src-btn");
+        if (btn && !pinned) show(btn);
+      });
+      document.addEventListener("click", e => {
+        const btn = e.target.closest(".src-btn");
+        if (btn) {
+          if (owner === btn && pinned) hide(); else { show(btn); pinned = true; }
+          return;
+        }
+        if (e.target.closest("#src-pop a")) { setTimeout(hide, 0); return; }  // jumped to a source
+        if (!e.target.closest("#src-pop")) hide();
+      });
+      document.addEventListener("keydown", e => {
+        if (e.key === "Escape" && owner) { const b = owner; hide(); b.focus(); }
+      });
+      addEventListener("scroll", () => owner && place(owner), true);
+      addEventListener("resize", () => owner && place(owner));
+    })();
+  </script>
+</body>
+</html>
