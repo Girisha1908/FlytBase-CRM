@@ -102,22 +102,7 @@ Tools used: `whoami`, `get_my_accounts`, `get_signals`, `write_note`.
 
 ## Deploy (Render)
 
-1. Push this repository to GitHub (public).
-2. On Render, create a **Web Service** from the repository.
-3. Build command: `pip install -r requirements.txt`
-4. Start command: `gunicorn app:app` (or `python app.py`)
-5. Under **Environment**, add `AQ_TOKEN` with your token value.
-6. Open the Render URL in a private window to check it works without your laptop.
 
----
-
-## Security
-
-- The token is read from the `AQ_TOKEN` environment variable on the server.
-- It is **never** in the code, the browser, or this repository.
-- `.env` and `data/` are listed in `.gitignore`.
-
----
 
 ## What it does not do yet
 
