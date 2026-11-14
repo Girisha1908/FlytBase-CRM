@@ -1,0 +1,293 @@
+{
+  "story_claims": [],
+  "power_map": {
+    "a_renewal": {
+      "decides": {
+        "people": [],
+        "note": "Not named. Rhys Calder leads the programme but leaves in January.",
+        "src": [
+          "rhys_calder",
+          "champion_leaves"
+        ]
+      },
+      "pays": {
+        "people": [],
+        "note": "Each force pays from its own budget, and its chief finance officer approves the call-off. None is named.",
+        "src": [
+          "rc_funding_2",
+          "hd_calloff_2"
+        ]
+      },
+      "uses": {
+        "people": [
+          "karen_mbeki"
+        ],
+        "note": "Westmere and Metro Central fly operationally. Metro Central's users aren't named.",
+        "src": [
+          "km_usage_1",
+          "rc_appetite_2"
+        ]
+      },
+      "blocks": {
+        "people": [],
+        "note": "Not named. Open blocker: nobody can show which forces use the docks.",
+        "src": [
+          "a_renewal"
+        ]
+      }
+    },
+    "a_tarn": {
+      "decides": {
+        "people": [],
+        "note": "Not named.",
+        "src": []
+      },
+      "pays": {
+        "people": [],
+        "note": "Each force's chief finance officer. Not named.",
+        "src": [
+          "rc_funding_2"
+        ]
+      },
+      "uses": {
+        "people": [],
+        "note": "Tarn Valley and Norwold officers, not named. Tarn Valley has never flown a live mission; Norwold only trains.",
+        "src": [
+          "rc_appetite_2"
+        ]
+      },
+      "blocks": {
+        "people": [
+          "fatima_osei"
+        ],
+        "note": "Signs the DPIA. Norwold's chief constable (not named) is cautious after a privacy row.",
+        "src": [
+          "fo_dpia_2",
+          "fo_needs_3",
+          "km_others_2"
+        ]
+      }
+    },
+    "a_westmere": {
+      "decides": {
+        "people": [],
+        "note": "Not named.",
+        "src": []
+      },
+      "pays": {
+        "people": [],
+        "note": "Westmere's chief finance officer. Not named.",
+        "src": [
+          "rc_funding_2"
+        ]
+      },
+      "uses": {
+        "people": [
+          "karen_mbeki"
+        ],
+        "note": "Her unit: six officers who also do other duties.",
+        "src": [
+          "km_staff_2"
+        ]
+      },
+      "blocks": {
+        "people": [],
+        "note": "The superintendent (not named) thinks 30 docks is unrealistic. Nobody has asked her.",
+        "src": [
+          "kb_stadium_view"
+        ]
+      }
+    },
+    "a_tender": {
+      "decides": {
+        "people": [],
+        "note": "Scorers not named. Hannah Doyle leads alliance procurement and runs the clarification window.",
+        "src": [
+          "hannah_doyle",
+          "hd_window_2"
+        ]
+      },
+      "pays": {
+        "people": [],
+        "note": "No pooled budget. Each force's finance signs its own call-off.",
+        "src": [
+          "rc_funding_2",
+          "hd_calloff_2"
+        ]
+      },
+      "uses": {
+        "people": [],
+        "note": "Nobody has agreed who would fly 300 docks.",
+        "src": [
+          "rc_tender_2"
+        ]
+      },
+      "blocks": {
+        "people": [],
+        "note": "Not named.",
+        "src": []
+      }
+    }
+  },
+  "moves": [
+    {
+      "do": "Reply to Karen Mbeki in writing: how many more officers can be trained before the event and when, and who answers, how fast, if a dock fails on the day. She bought operator training and priority support; this is where both get tested.",
+      "owner": "You (CSM)",
+      "when": {
+        "text": "This week, before the 5 December public event",
+        "src": [
+          "urgent_request"
+        ]
+      },
+      "deal": "a_westmere",
+      "src": [
+        "urgent_request",
+        "a_training",
+        "a_priority_support",
+        "km_staff_2"
+      ]
+    },
+    {
+      "do": "Send Hannah Doyle a written clarification request on cost per flight and the operating model, using the clarification template. Together they carry 40% of the score, and the spec has neither.",
+      "owner": "You (CSM)",
+      "when": {
+        "deadline": "a_tender"
+      },
+      "deal": "a_tender",
+      "src": [
+        "hd_window_2",
+        "hd_weights_1",
+        "rc_tender_2",
+        "clarification_template"
+      ]
+    },
+    {
+      "do": "Ask Rhys Calder who owns the renewal after him, and send per-force usage from the flight log so the renewal rests on measured flying, not on \"all four forces are keen\".",
+      "owner": "You (CSM)",
+      "when": {
+        "text": "Before Rhys Calder hands over in January",
+        "src": [
+          "champion_leaves"
+        ]
+      },
+      "deal": "a_renewal",
+      "src": [
+        "champion_leaves",
+        "flight_log_force_month",
+        "km_usage_1",
+        "rc_appetite_0"
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "gap": "Which forces actually fly, dock by dock",
+      "why": "It is the open blocker on the renewal.",
+      "who": [
+        {
+          "id": "karen_mbeki",
+          "note": "for Westmere"
+        },
+        {
+          "text": "The force flight log file",
+          "src": [
+            "flight_log_force_month"
+          ]
+        }
+      ],
+      "src": [
+        "a_renewal",
+        "km_usage_1",
+        "rc_appetite_2"
+      ]
+    },
+    {
+      "gap": "Cost per flight against the helicopter contract",
+      "why": "Cost per flight and the operating model carry 40% of the tender score. Nobody has compared them.",
+      "who": [
+        {
+          "id": "karen_mbeki",
+          "note": "flight and overtime figures"
+        },
+        {
+          "id": "hannah_doyle",
+          "note": "the comparator"
+        }
+      ],
+      "src": [
+        "hd_weights_1",
+        "km_value_2",
+        "km_staff_2"
+      ]
+    },
+    {
+      "gap": "Who would fly 300 docks",
+      "why": "The spec has no costed operating model, which is the tender's open blocker.",
+      "who": [
+        {
+          "id": "karen_mbeki",
+          "note": "what scaling took at Westmere"
+        }
+      ],
+      "src": [
+        "rc_tender_2",
+        "a_tender",
+        "km_staff_2"
+      ]
+    },
+    {
+      "gap": "Rhys Calder's successor",
+      "why": "Every call on file was with him alone, and he leaves in January.",
+      "who": [
+        {
+          "id": "rhys_calder"
+        }
+      ],
+      "src": [
+        "champion_leaves"
+      ]
+    },
+    {
+      "gap": "Who signs the renewal",
+      "why": "No decision-maker is named for the largest near-term deal.",
+      "who": [
+        {
+          "id": "rhys_calder"
+        }
+      ],
+      "src": [
+        "a_renewal"
+      ]
+    },
+    {
+      "gap": "The superintendent's view on 30 docks at Westmere",
+      "why": "The 30-dock figure is Rhys Calder's unverified claim, and she thinks it's unrealistic.",
+      "who": [
+        {
+          "text": "The superintendent (not named); Karen Mbeki raised it",
+          "src": [
+            "kb_stadium_view"
+          ]
+        }
+      ],
+      "src": [
+        "rc_stadium_0",
+        "kb_stadium_view"
+      ]
+    },
+    {
+      "gap": "Whether all four forces are keen",
+      "why": "Only an unverified claim. Two of the four don't fly operationally.",
+      "who": [
+        {
+          "text": "Each force's lead (not named)",
+          "src": []
+        }
+      ],
+      "src": [
+        "rc_appetite_0",
+        "rc_appetite_2"
+      ]
+    }
+  ]
+}

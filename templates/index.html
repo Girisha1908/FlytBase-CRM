@@ -17,6 +17,9 @@
     </div>
 
     <p class="summary" title="{{ c.summary }}">{{ c.summary }}</p>
+    {% if a.source == 'paperwork' %}
+      <span class="paper-badge" title="Built from paperwork only, nobody spoken to yet.">Paperwork only</span>
+    {% endif %}
     {% if c.claims %}
       <a class="claims-badge" href="{{ url_for('account', account_id=a.id) }}"
          title="Phrases in the official story that are unverified claims. See the Monday brief for detail.">
@@ -26,12 +29,12 @@
     <dl class="stats stats-money">
       <div>
         <dt>Backed</dt>
-        <dd class="num">{{ c.worth.backed_total | money }} {{ m.sources(c.worth.backed_ids, idx) }}</dd>
+        <dd class="num">{{ c.worth.backed_total | money(a.currency) }} {{ m.sources(c.worth.backed_ids, idx) }}</dd>
         <dd class="stat-note">Won or agreed</dd>
       </div>
       <div>
         <dt>Not yet backed</dt>
-        <dd class="num">{{ c.worth.not_backed_total | money }} {{ m.sources(c.worth.not_backed_ids, idx) }}</dd>
+        <dd class="num">{{ c.worth.not_backed_total | money(a.currency) }} {{ m.sources(c.worth.not_backed_ids, idx) }}</dd>
         <dd class="stat-note">Worth up to</dd>
       </div>
     </dl>

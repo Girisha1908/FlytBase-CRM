@@ -4,11 +4,11 @@
 {% macro cite(id, idx) -%}
   {%- set entry = idx.get(id) -%}
   {%- if entry -%}
-    {%- set prefix = {'fact': 'ev', 'file': 'ev', 'deal': 'deal', 'offer': 'offer', 'person': 'person', 'signal': 'sig'}[entry[0]] -%}
+    {%- set prefix = {'fact': 'ev', 'file': 'ev', 'deal': 'deal', 'offer': 'offer', 'person': 'person', 'signal': 'sig', 'paper': 'paper'}[entry[0]] -%}
     <a class="cite cite-{{ entry[0] }}{% if entry[0] == 'fact' and entry[1].status == 'claim' %} cite-claim{% endif %}"
-       href="#{{ prefix }}-{{ id }}" title="{{ entry[0] }}: {{ entry[1].text or entry[1].title or entry[1].name or id }}">{{ id }}</a>
+       href="#{{ prefix }}-{{ id | slug }}" title="{{ entry[0] }}: {{ entry[1].text or entry[1].title or entry[1].name or id }}">{{ id }}</a>
   {%- else -%}
-    <span class="cite cite-missing" title="This id is not in book.json or signals.json">{{ id }}?</span>
+    <span class="cite cite-missing" title="This id is not in book.json, signals.json or the paperwork">{{ id }}?</span>
   {%- endif -%}
 {%- endmacro %}
 
@@ -19,9 +19,9 @@
     <span class="src-desc">
       {%- if entry -%}
         {%- set rec = entry[1] -%}
-        {%- if entry[0] == 'fact' and rec.status == 'claim' %}Unverified claim, {{ rec.said_by }}: {% elif entry[0] == 'fact' %}{{ rec.status | capitalize }} fact, {{ rec.said_by }}: {% elif entry[0] == 'person' %}Person: {% else %}{{ entry[0] | capitalize }}: {% endif -%}
+        {%- if entry[0] == 'fact' and rec.status == 'claim' %}Unverified claim, {{ rec.said_by }}: {% elif entry[0] == 'fact' %}{{ rec.status | capitalize }} fact, {{ rec.said_by }}: {% elif entry[0] == 'person' %}Person: {% elif entry[0] == 'paper' %}Paperwork record: {% else %}{{ entry[0] | capitalize }}: {% endif -%}
         {{ (rec.text or rec.title or rec.name or id) | truncate(110) }}
-      {%- else -%}Not found in book.json or signals.json{%- endif -%}
+      {%- else -%}Not found in book.json, signals.json or the paperwork{%- endif -%}
     </span></span>
 {%- endmacro %}
 
@@ -45,7 +45,7 @@
   {%- set p = idx.get(id, (None, None))[1] -%}
   {%- if p -%}
     <span class="person"><span class="person-name">{{ p.name }}</span>
-    <span class="rel rel-{{ p.relationship }}">{{ p.relationship }}</span></span>
+    <span class="rel rel-{{ p.relationship | slug }}">{{ p.relationship }}</span></span>
   {%- else -%}{{ cite(id, idx) }}{%- endif -%}
 {%- endmacro %}
 

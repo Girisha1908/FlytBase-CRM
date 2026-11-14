@@ -1,0 +1,88 @@
+{
+  "story_claims": [],
+
+  "power_map": {
+    "K/deal_history.json#on_file_as_open_at_handover[0]": {
+      "decides": {"people": [], "note": "Not on file. Dana Whitfield, the estate manager, asked when it starts; whether she decides isn't recorded.",
+                  "src": ["K/emails/2026-10-19_dana_when.txt", "K/profile.json"]},
+      "pays": {"people": [], "note": "FlytBase invoiced the reseller (a local installer, not named), who paid in full. Who pays the reseller isn't on file.",
+               "src": ["K/invoices.json"]},
+      "uses": {"people": [], "note": "Nobody yet: no flight on record, and operator training wasn't included.",
+               "src": ["K/usage_weekly.csv", "K/contract.txt"]},
+      "blocks": {"people": [], "note": "Not named. The installer has stopped answering.",
+                 "src": ["K/profile.json", "K/emails/2026-10-19_dana_when.txt"]}
+    },
+    "K/profile.json#renewal": {
+      "decides": {"people": [], "note": "Not on file. There is no automatic renewal.", "src": ["K/contract.txt"]},
+      "pays": {"people": [], "note": "Not on file. The first year was paid through the reseller.", "src": ["K/invoices.json"]},
+      "uses": {"people": [], "note": "Not on file.", "src": []},
+      "blocks": {"people": [], "note": "Not on file.", "src": []}
+    }
+  },
+
+  "moves": [
+    {
+      "do": "Reply to Dana Whitfield in person. Her 19 October email asked who to speak to and when the dock starts; it got only an automatic acknowledgement, and the request is still open.",
+      "owner": "You (CSM)",
+      "when": {"text": "Now: open with no reply from a person since 19 October 2026", "src": ["K/requests.csv"]},
+      "deal": "K/deal_history.json#on_file_as_open_at_handover[0]",
+      "src": ["K/emails/2026-10-19_dana_when.txt", "K/requests.csv", "K/mail_log.json"]
+    },
+    {
+      "do": "Get dock KE-D01 commissioned. It has been online 7 days a week for 7 weeks with 0 flights, no commissioning flight is on record, and the installer no longer answers, so FlytBase has to arrange it.",
+      "owner": "You (CSM), with the support desk",
+      "when": {"deadline": "K/profile.json#renewal"},
+      "deal": "K/deal_history.json#on_file_as_open_at_handover[0]",
+      "src": ["K/usage_weekly.csv", "K/devices.json", "K/device_events.csv", "K/profile.json"]
+    },
+    {
+      "do": "Ask Dana Whitfield who will fly the dock and what the estate needs it for. Operator training isn't included, and the only stated purpose is the installer's order note: mapping the whole estate.",
+      "owner": "You (CSM)",
+      "when": {"deadline": "K/profile.json#renewal"},
+      "deal": "K/profile.json#renewal",
+      "src": ["K/contract.txt", "K/deal_history.json"]
+    }
+  ],
+
+  "extra_risks": [
+    {"text": "Usage: 0 flights in each of the 7 weeks on record, while the dock was online all 7 days of every week.",
+     "src": ["K/usage_weekly.csv"]},
+    {"text": "No commissioning flight on record. The dock was last seen online on 13 November 2026.",
+     "src": ["K/devices.json"]},
+    {"text": "No open tickets: the only ticket, FB-10923 (dock registered), closed the day it opened. Dana Whitfield's request never became a ticket and is still open.",
+     "src": ["K/tickets.json", "K/requests.csv"]},
+    {"text": "The installer that sold, installed and was invoiced no longer answers its phone or email.",
+     "src": ["K/profile.json", "K/invoices.json"]},
+    {"text": "Invoice INV-26-0921 (£14,000, first year) was paid by the reseller on 14 September 2026. The term runs to 13 September 2027, with no automatic renewal.",
+     "src": ["K/invoices.json", "K/contract.txt"]},
+    {"text": "Operator training, FlytBase onboarding and any site survey are not included.",
+     "src": ["K/contract.txt"]}
+  ],
+
+  "gaps": [
+    {"gap": "Who decides for the estate",
+     "why": "There is no automatic renewal, and no call notes or logins name anyone besides Dana Whitfield.",
+     "who": [{"id": "k_dana_2bw"}],
+     "src": ["K/contract.txt", "K/profile.json"]},
+    {"gap": "Who pays for it on the estate's side",
+     "why": "FlytBase invoiced the reseller, not the customer. What the estate paid the reseller isn't on file.",
+     "who": [{"id": "k_dana_2bw"}],
+     "src": ["K/invoices.json"]},
+    {"gap": "Who will fly the dock",
+     "why": "Operator training isn't included, and it has never flown.",
+     "who": [{"id": "k_dana_2bw"}],
+     "src": ["K/contract.txt", "K/usage_weekly.csv"]},
+    {"gap": "Why it hasn't flown",
+     "why": "No commissioning flight is on record. The deal history points to an install note that isn't in these records.",
+     "who": [{"text": "The support desk", "src": ["K/tickets.json"]}],
+     "src": ["K/devices.json", "K/deal_history.json"]},
+    {"gap": "What the estate needs",
+     "why": "The only stated purpose is the installer's order note: mapping the whole estate.",
+     "who": [{"id": "k_dana_2bw"}],
+     "src": ["K/deal_history.json"]},
+    {"gap": "A working contact for the installer",
+     "why": "They ordered, installed and were invoiced. Their phone and email no longer answer.",
+     "who": [{"text": "Not on file", "src": ["K/profile.json"]}],
+     "src": ["K/profile.json"]}
+  ]
+}

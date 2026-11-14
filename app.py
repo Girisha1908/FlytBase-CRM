@@ -2,12 +2,18 @@
 app.py - the FlytBase CRM web app.
 
 Rules this file follows:
-  * Page loads NEVER call the MCP server. They read data/book.json (written
-    once by connect.py), data/signals.json and data/outbox.json.
-  * ONE background thread makes every MCP call, at most one per minute:
-      - if a note is waiting in data/outbox.json, it sends that (write_note)
-      - otherwise it calls get_signals and appends new events to signals.json
-    So clicking "Save next steps" never adds a second call in the same minute.
+  * Page loads NEVER call the MCP server. They read local files only:
+    data/book.json, data/paperwork_<id>.json, data/signals.json,
+    data/outbox.json, and the hand-written briefs in briefs/<id>.json.
+  * Every account in book.json, plus every account with a saved paperwork
+    pack, gets a page automatically. There is no account-specific code here.
+  * ONE background thread makes every MCP call, at most one per minute.
+    Each minute it does the first of these that applies:
+      1. send a note waiting in data/outbox.json (write_note)
+      2. run a queued refresh job (get_my_accounts / get_all_paperwork)
+      3. every WHOAMI_EVERY minutes: whoami, and if it names an account we
+         don't have, queue a book refresh plus that account's paperwork
+      4. otherwise get_signals, appending new events to signals.json
 
 Run it with:   python app.py      then open http://127.0.0.1:5000
 """
@@ -24,14 +30,19 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 
-from briefs import BRIEFS
-from mcp_client import RateLimited, call_tool, write_note
+from mcp_client import RateLimited, call_mapped, call_tool, write_note
+from paperwork import account_from_pack, load_packs, records as pack_records
 
 DATA_DIR = Path(__file__).parent / "data"
 BOOK_FILE = DATA_DIR / "book.json"
 SIGNALS_FILE = DATA_DIR / "signals.json"
 OUTBOX_FILE = DATA_DIR / "outbox.json"
+ME_FILE = DATA_DIR / "me.json"
+BRIEFS_DIR = Path(__file__).parent / "briefs"
 POLL_SECONDS = 61  # one call per minute per token, plus a second of margin
+WHOAMI_EVERY = 10  # check whoami for new accounts every 10th minute
+
+EMPTY_BRIEF = {"story_claims": [], "power_map": {}, "moves": [], "gaps": [], "extra_risks": []}
 
 app = Flask(__name__)
 
@@ -73,6 +84,33 @@ def load_book():
     return book
 
 
+def load_accounts():
+    """
+    Every account to show: those in book.json, then any that exist only as a
+    saved paperwork pack (built by paperwork.py). Returns (book, accounts, packs).
+    """
+    book = load_book()
+    packs = load_packs()
+    accounts = list(book["accounts"])
+    known = {a["id"] for a in accounts}
+    accounts += [account_from_pack(pk) for aid, pk in packs.items() if aid not in known]
+    return book, accounts, packs
+
+
+def find_account(accounts, account_id):
+    acct = next((a for a in accounts if a["id"] == account_id), None)
+    if acct is None:
+        abort(404)
+    return acct
+
+
+def load_brief(account_id):
+    """The hand-written parts of an account's brief (briefs/<id>.json), or an empty brief."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", account_id):
+        return dict(EMPTY_BRIEF)
+    return {**EMPTY_BRIEF, **read_json(BRIEFS_DIR / f"{account_id}.json", {})}
+
+
 def signal_time(s):
     """Best timestamp for sorting a signal, newest first."""
     return s.get("set_off_at") or s.get("_received_at") or s.get("dated") or ""
@@ -98,14 +136,18 @@ def load_outbox(account=None):
 # Source ids: everything the brief cites must exist in book.json/signals.json #
 # =========================================================================== #
 
-def build_index(book, signals):
+def build_index(accounts, files, signals, packs):
     """
     Map every citable id to (kind, record). Kinds: deal, offer, fact, file,
-    person (stakeholder), signal. Used to render citation chips and to check
-    that briefs.py never cites an id that doesn't exist.
+    person (stakeholder), signal, paper (a paperwork record path). Used to
+    render source links and to check that briefs never cite an id that
+    doesn't exist.
     """
     index = {}
-    for a in book["accounts"]:
+    for pack in packs.values():
+        for rid, rec in pack_records(pack):
+            index[rid] = ("paper", rec)
+    for a in accounts:
         for o in a["opportunities"]:
             index[o["id"]] = ("deal", o)
         for o in a["offers"]:
@@ -114,7 +156,7 @@ def build_index(book, signals):
             index[f["id"]] = ("fact", f)
         for s in a["stakeholders"]:
             index[s["id"]] = ("person", s)
-    for f in book.get("files", []):
+    for f in files:
         index[f["id"]] = ("file", f)
     for s in signals:
         if "id" in s:
@@ -136,6 +178,8 @@ def cited_ids(brief):
         ids += m["when"].get("src", [])
         if "deadline" in m["when"]:
             ids.append(m["when"]["deadline"])
+    for r in brief.get("extra_risks", []):
+        ids += r["src"]
     for g in brief.get("gaps", []):
         ids += g["src"]
         for w in g["who"]:
@@ -152,7 +196,7 @@ def check_brief(brief, index):
 # Computed parts of the brief                                                 #
 # =========================================================================== #
 
-BACKED_STATUSES = {"won", "agreed"}
+BACKED_STATUSES = {"won", "agreed", "paid"}
 
 
 def book_worth(acct):
@@ -177,6 +221,8 @@ def book_worth(acct):
                 row["reason"], row["blocker_open"] = blocker["text"], True
             elif blocker.get("status") == "cleared":
                 row["reason"] = f"Blocker cleared ({blocker['text'].rstrip('.')}), but not won yet."
+            elif o.get("basis"):
+                row["reason"] = o["basis"]
             else:
                 row["reason"] = f"No blocker recorded. Stage: {o['stage']}."
             if value is None:
@@ -189,7 +235,7 @@ def book_worth(acct):
                "declined_value": None}
         if x["status"] in BACKED_STATUSES:
             row["backed"] = x["value"]
-            row["reason"] = f"{x['status'].capitalize()} with {x['pitch_to']}."
+            row["reason"] = x.get("note") or f"{x['status'].capitalize()} with {x['pitch_to']}."
         elif x["status"] == "declined":
             row["declined_value"] = x["value"]
             row["reason"] = f"Declined by {x['pitch_to']}. Not counted."
@@ -216,8 +262,9 @@ def deadline_name(text):
     return re.split(r"(?<=[.!?])\s", text.strip(), maxsplit=1)[0].rstrip(".")
 
 
-def risks(acct, signals):
-    """What could go wrong, computed from book.json and live signals."""
+def risks(acct, signals, brief):
+    """What could go wrong: computed from the account, live signals, and any
+    extra sourced risks the brief lists."""
     deadlines = []
     seen_texts = set()
     for o in acct["opportunities"]:
@@ -238,6 +285,7 @@ def risks(acct, signals):
                      if (o.get("blocker") or {}).get("status") == "open"],
         "declined": [x for x in acct["offers"] if x["status"] == "declined"],
         "signals": signals,
+        "extra": brief.get("extra_risks", []),
     }
 
 
@@ -374,11 +422,84 @@ def send_next_note():
     return True
 
 
-def worker():
-    """Forever: one MCP call (a queued note first, else get_signals), then wait."""
-    while True:
+# Refresh jobs waiting for a free minute: ("book",) or ("paperwork", account_id).
+refresh_jobs = []
+# Accounts whose paperwork fetch failed this run, so we don't retry every 10 min.
+paperwork_failed = set()
+
+
+def known_account_ids():
+    """Accounts the app can already show: book.json plus saved paperwork."""
+    book = read_json(BOOK_FILE, {}) or {}
+    return {a["id"] for a in book.get("accounts", [])} | set(load_packs())
+
+
+def check_whoami():
+    """
+    whoami (one call). If it names an account we can't show yet, queue a book
+    refresh, then that account's paperwork, for the following minutes.
+    """
+    me = call_tool("whoami")
+    with data_lock:
+        write_json_atomic(ME_FILE, me)
+    named = {a.get("id") for a in me.get("new_accounts", []) if isinstance(a, dict)}
+    named |= {p.get("account") for p in me.get("pack", []) if isinstance(p, dict)}
+    new = sorted(i for i in named - known_account_ids() if i and i not in paperwork_failed)
+    if new and not refresh_jobs:
+        print(f"[whoami] new account(s) {new}: queuing a book refresh and their paperwork")
+        refresh_jobs.append(("book",))
+        refresh_jobs.extend(("paperwork", i) for i in new)
+    else:
+        print("[whoami] no new accounts")
+
+
+def run_refresh_job():
+    """Run the next queued refresh job (one call). Returns True if it ran one."""
+    if not refresh_jobs:
+        return False
+    job = refresh_jobs[0]
+    if job[0] == "book":
+        book = call_tool("get_my_accounts")
+        with data_lock:
+            if BOOK_FILE.exists():
+                write_json_atomic(DATA_DIR / "book.prev.json", read_json(BOOK_FILE, {}))
+            write_json_atomic(BOOK_FILE, book)
+        print("[refresh] saved data/book.json")
+    else:
+        account_id = job[1]
         try:
-            if not send_next_note():
+            pack, _ = call_mapped("get_all_paperwork", account=account_id)
+        except RateLimited:
+            raise  # stays queued for next minute
+        except Exception as e:
+            paperwork_failed.add(account_id)
+            refresh_jobs.pop(0)
+            raise RuntimeError(f"paperwork for {account_id} failed: {e}") from e
+        if not (isinstance(pack, dict) and pack.get("account") == account_id):
+            paperwork_failed.add(account_id)
+            refresh_jobs.pop(0)
+            raise RuntimeError(f"paperwork for {account_id} came back in an unexpected shape")
+        with data_lock:
+            write_json_atomic(DATA_DIR / f"paperwork_{account_id}.json", pack)
+        print(f"[refresh] saved data/paperwork_{account_id}.json")
+    refresh_jobs.pop(0)  # only after success; a rate limit leaves it queued
+    return True
+
+
+def worker():
+    """
+    Forever: one MCP call per minute, then wait. Priority: a queued note, a
+    queued refresh job, whoami every WHOAMI_EVERY minutes, else signals.
+    """
+    tick = 0
+    while True:
+        tick += 1
+        try:
+            if send_next_note() or run_refresh_job():
+                pass
+            elif tick % WHOAMI_EVERY == 1:  # the first minute, then every 10th
+                check_whoami()
+            else:
                 n = poll_signals_once()
                 print(f"[signals] checked, {n} new event(s)")
         except RateLimited as e:
@@ -404,10 +525,26 @@ def num(value):
     return "—" if value is None else f"{value:,.0f}"
 
 
+CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$"}
+
+
 @app.template_filter("money")
-def money(value):
-    """A money amount with a dollar sign, e.g. 350000 -> $350,000."""
-    return "—" if value is None else f"${value:,.0f}"
+def money(value, currency=None):
+    """
+    A money amount with its currency symbol, e.g. 350000 -> $350,000.
+    Uses the account's stated currency when its records state one (Kestrel's
+    paperwork states GBP). book.json states none, so those amounts show "$".
+    """
+    if value is None:
+        return "—"
+    symbol = CURRENCY_SYMBOLS.get(currency or "USD", f"{currency} ")
+    return f"{symbol}{value:,.0f}"
+
+
+@app.template_filter("slug")
+def slug(value):
+    """An id made safe for an HTML anchor: "K/profile.json#renewal" -> "K-profile-json-renewal"."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", str(value)).strip("-")
 
 
 @app.template_filter("when")
@@ -428,12 +565,12 @@ def fmt_time(iso):
 
 @app.route("/")
 def index():
-    book = load_book()
+    book, accounts, packs = load_accounts()
     signals = load_signals()
-    idx = build_index(book, signals)
+    idx = build_index(accounts, book.get("files", []), signals, packs)
     cards = []
-    for a in book["accounts"]:
-        segments = story_segments(a, BRIEFS.get(a["id"], {}), idx)
+    for a in accounts:
+        segments = story_segments(a, load_brief(a["id"]), idx)
         cards.append({
             "acct": a,
             # Same totals as the Monday brief's "Book worth" section.
@@ -446,19 +583,19 @@ def index():
 
 @app.route("/account/<account_id>")
 def account(account_id):
-    book = load_book()
-    acct = next((a for a in book["accounts"] if a["id"] == account_id), None)
-    if acct is None:
-        abort(404)
+    book, accounts, packs = load_accounts()
+    acct = find_account(accounts, account_id)
     signals = load_signals(account_id)
-    idx = build_index(book, load_signals())
-    brief = BRIEFS.get(account_id, {"power_map": {}, "moves": [], "gaps": [], "story_claims": []})
+    idx = build_index(accounts, book.get("files", []), load_signals(), packs)
+    brief = load_brief(account_id)
     moves = [{**m, "when_r": resolve_when(m["when"], acct)} for m in brief["moves"]]
+    paper = pack_records(packs[account_id]) if account_id in packs else []
     return render_template(
         "account.html", book=book, acct=acct, brief=brief, moves=moves, idx=idx,
-        worth=book_worth(acct), risks=risks(acct, signals), signals=signals,
+        worth=book_worth(acct), risks=risks(acct, signals, brief), signals=signals,
         story=story_segments(acct, brief, idx), missing=check_brief(brief, idx),
         files=[f for f in book.get("files", []) if f.get("account") == account_id],
+        paper=paper, paperwork_only=acct.get("source") == "paperwork",
         notes=list(reversed(load_outbox(account_id))), status=worker_status,
     )
 
@@ -466,11 +603,12 @@ def account(account_id):
 @app.route("/account/<account_id>/next-steps", methods=["POST"])
 def save_next_steps(account_id):
     """Queue a write_note(kind="next_step"). The worker sends it within a minute."""
-    book = load_book()
-    acct = next((a for a in book["accounts"] if a["id"] == account_id), None)
-    if acct is None or account_id not in BRIEFS:
-        abort(404)
-    text = next_steps_text(acct, BRIEFS[account_id])
+    _, accounts, _ = load_accounts()
+    acct = find_account(accounts, account_id)
+    brief = load_brief(account_id)
+    if not brief["moves"]:
+        abort(400, "This account's brief has no moves to save yet.")
+    text = next_steps_text(acct, brief)
     with data_lock:
         notes = read_json(OUTBOX_FILE, [])
         # Don't queue the same text twice while one is still waiting.
@@ -502,12 +640,14 @@ def notes_api(account_id):
 
 def warn_about_briefs():
     """Print any cited id that doesn't exist, at startup."""
-    book = read_json(BOOK_FILE, None)
-    if not book:
+    if not BOOK_FILE.exists():
         return
-    idx = build_index(book, read_json(SIGNALS_FILE, []))
-    for acct_id, brief in BRIEFS.items():
-        missing = check_brief(brief, idx)
+    with app.test_request_context():
+        book, accounts, packs = load_accounts()
+    idx = build_index(accounts, book.get("files", []), read_json(SIGNALS_FILE, []), packs)
+    for acct in accounts:
+        acct_id = acct["id"]
+        missing = check_brief(load_brief(acct_id), idx)
         if missing:
             print(f"[briefs] account {acct_id} cites ids not in book/signals: {missing}")
 

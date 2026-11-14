@@ -15,6 +15,8 @@ It is only ever sent to the MCP server, never printed and never sent to a browse
 
 import json
 import os
+import re
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -27,6 +29,16 @@ load_dotenv()
 
 class RateLimited(Exception):
     """Raised when the server says we've used our one call for this minute."""
+
+
+def _is_rate_limit(text):
+    """
+    The server reports the limit in-band, e.g.
+    {"error": "Too many requests: one call a minute. Try again in 38 seconds.",
+     "retry_after_seconds": 38}
+    """
+    t = text.lower()
+    return any(k in t for k in ("too many requests", "retry_after", "rate limit", "one call a minute"))
 
 
 def _token():
@@ -69,29 +81,57 @@ def call_tool(name, arguments=None):
     return _with_session(lambda rpc: _call(rpc, name, arguments or {}))
 
 
-def write_note(account, kind, text):
+# Our names for common arguments, and the names a server might use for them.
+ARG_ALIASES = {
+    "account": ["account", "account_id", "accountId", "id"],
+    "kind": ["kind", "type", "category"],
+    "text": ["text", "body", "content", "note", "message"],
+}
+
+
+def call_mapped(name, **values):
     """
-    Call the write_note tool. We don't hard-code its argument names: inside the
-    same session we ask the server for the tool's input schema (tools/list is a
-    protocol request, not a tool call) and map our three values onto it.
-    Returns (result, arguments_sent) so the caller can show what was sent.
+    Call a tool whose argument names we don't hard-code. Inside the same
+    session we ask the server for the tool's input schema (tools/list is a
+    protocol request, not a tool call) and map our values onto it, e.g.
+    call_mapped("get_all_paperwork", account="K").
+    Returns (result, arguments_sent).
     """
     def run(rpc):
         tools = rpc("tools/list", {}).get("result", {}).get("tools", [])
-        schema = next((t.get("inputSchema", {}) for t in tools if t.get("name") == "write_note"), {})
+        schema = next((t.get("inputSchema", {}) for t in tools if t.get("name") == name), {})
         props = list(schema.get("properties", {}))
-
-        def pick(candidates, default):
-            return next((p for p in candidates if p in props), default)
-
-        args = {
-            pick(["account", "account_id", "accountId"], "account"): account,
-            pick(["kind", "type", "category"], "kind"): kind,
-            pick(["text", "body", "content", "note", "message"], "text"): text,
-        }
-        return _call(rpc, "write_note", args), args
+        args = {}
+        for ours, value in values.items():
+            candidates = ARG_ALIASES.get(ours, [ours])
+            args[next((c for c in candidates if c in props), ours)] = value
+        return _call(rpc, name, args), args
 
     return _with_session(run)
+
+
+def write_note(account, kind, text):
+    """Call write_note. Returns (result, arguments_sent)."""
+    return call_mapped("write_note", account=account, kind=kind, text=text)
+
+
+def call_patiently(name, tries=6, **values):
+    """
+    For one-off scripts (not the app's worker): call a tool, and if the
+    one-call-a-minute limit is hit, wait exactly as long as the server says
+    ("retry_after_seconds") and try again.
+    """
+    for attempt in range(1, tries + 1):
+        try:
+            if values:
+                return call_mapped(name, **values)[0]
+            return call_tool(name)
+        except RateLimited as e:
+            m = re.search(r'"retry_after_seconds":\s*(\d+)', str(e))
+            wait = int(m.group(1)) + 0.3 if m else 61
+            print(f"  [{name}] one call a minute: retrying in {wait:.0f}s", flush=True)
+            time.sleep(wait)
+    raise RateLimited(f"{name}: still rate limited after {tries} tries")
 
 
 def _call(rpc, name, arguments):
@@ -100,7 +140,7 @@ def _call(rpc, name, arguments):
     if "error" in message:
         err = message["error"]
         text = str(err.get("message", err))
-        if "rate" in text.lower() or "limit" in text.lower():
+        if _is_rate_limit(text):
             raise RateLimited(text)
         raise RuntimeError(f"MCP error calling {name}: {text}")
     return _extract_result(name, message["result"])
@@ -163,7 +203,7 @@ def _extract_result(name, result):
     """
     if result.get("isError"):
         text = " ".join(c.get("text", "") for c in result.get("content", []))
-        if "rate" in text.lower() or "limit" in text.lower():
+        if _is_rate_limit(text):
             raise RateLimited(text)
         raise RuntimeError(f"Tool {name} failed: {text}")
 

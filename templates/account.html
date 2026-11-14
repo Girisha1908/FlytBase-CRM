@@ -8,11 +8,22 @@
   <span class="tag">{{ acct.id }}</span>
   <h1>{{ acct.name }}</h1>
   <p class="story">{{ m.story(story, idx) }}</p>
+  {% if paperwork_only %}
+  <p class="muted small">From account {{ acct.id }}'s paperwork. Amounts in {{ acct.currency or 'the currency on file' }}, as the paperwork states.</p>
+  {% else %}
   <p class="muted small">Book snapshot exported {{ book.exported_at | when }}. Amounts are as given in book.json, which states no currency.</p>
+  {% endif %}
 </header>
 
+{% if paperwork_only %}
+  <div class="paper-banner" role="note">
+    <strong>Built from paperwork only, nobody spoken to yet.</strong>
+    Everything below comes from FlytBase's records on this account. Who decides, who pays and what they need are unknown until someone talks to them.
+  </div>
+{% endif %}
+
 {% if missing %}
-  <div class="alert">The brief cites ids that aren't in book.json or signals.json: {{ missing | join(', ') }}. Treat those lines as unsourced.</div>
+  <div class="alert">The brief cites ids that aren't in book.json, signals.json or the paperwork: {{ missing | join(', ') }}. Treat those lines as unsourced.</div>
 {% endif %}
 
 {# ---------------------------------------------------------------- live #}
@@ -44,12 +55,12 @@
     <div class="totals">
       <div class="total total-backed">
         <span class="total-label">Backed</span>
-        <span class="total-num">{{ worth.backed_total | money }}</span>
+        <span class="total-num">{{ worth.backed_total | money(acct.currency) }}</span>
         <span class="total-src">Won or agreed only. {{ m.sources(worth.backed_ids, idx) }}</span>
       </div>
       <div class="total total-open">
         <span class="total-label">Not yet backed</span>
-        <span class="total-num">{{ worth.not_backed_total | money }}</span>
+        <span class="total-num">{{ worth.not_backed_total | money(acct.currency) }}</span>
         <span class="total-src">“Worth up to” and open offers. {{ m.sources(worth.not_backed_ids, idx) }}</span>
       </div>
     </div>
@@ -60,10 +71,10 @@
       {% for r in worth.rows %}
         <tr class="{{ 'is-declined' if r.declined_value is not none }}">
           <td><span class="kind">{{ r.kind }}</span> {{ r.title }} {{ m.cite(r.id, idx) }}</td>
-          <td class="r num">{% if r.backed is not none %}{{ r.backed | money }}{% endif %}</td>
+          <td class="r num">{% if r.backed is not none %}{{ r.backed | money(acct.currency) }}{% endif %}</td>
           <td class="r num">
-            {%- if r.not_backed is not none %}{{ r.not_backed | money }}
-            {%- elif r.declined_value is not none %}<s>{{ r.declined_value | money }}</s>
+            {%- if r.not_backed is not none %}{{ r.not_backed | money(acct.currency) }}
+            {%- elif r.declined_value is not none %}<s>{{ r.declined_value | money(acct.currency) }}</s>
             {%- elif r.backed is none %}<span class="muted">not sized</span>{% endif -%}
           </td>
           <td class="{{ 'reason-blocked' if r.blocker_open }}">
@@ -124,10 +135,14 @@
       {% endfor %}
     </ol>
 
+    {% if moves %}
     <form method="post" action="{{ url_for('save_next_steps', account_id=acct.id) }}" class="save">
       <button type="submit">Save next steps</button>
       <span class="muted small">Sends these three moves to the CRM as a “next_step” note. Notes share the one-call-a-minute limit, so it can take up to a minute.</span>
     </form>
+    {% else %}
+    <p class="muted">No moves written for this account yet. Add them to briefs/{{ acct.id }}.json.</p>
+    {% endif %}
     <ul class="notes" id="notes">
       {% for n in notes[:3] %}
         <li class="note-{{ n.status }}">
@@ -143,6 +158,13 @@
     {# ------------------------------------------------ 4. risks #}
     <section class="block" id="risks">
       <h3>What could go wrong</h3>
+
+      {% if risks.extra %}
+      <h4>On the record</h4>
+      <ul class="plain">
+        {% for r in risks.extra %}<li>{{ r.text }} {{ m.sources(r.src, idx) }}</li>{% endfor %}
+      </ul>
+      {% endif %}
 
       <h4>Deadlines</h4>
       <ul class="plain">
@@ -174,7 +196,7 @@
       <h4>Declined offers</h4>
       <ul class="plain">
         {% for x in risks.declined %}
-          <li>{{ x.title }}, <span class="num">{{ x.value | money }}</span>, declined by {{ x.pitch_to }} {{ m.sources([x.id], idx) }}</li>
+          <li>{{ x.title }}, <span class="num">{{ x.value | money(acct.currency) }}</span>, declined by {{ x.pitch_to }} {{ m.sources([x.id], idx) }}</li>
         {% else %}<li class="muted">None.</li>{% endfor %}
       </ul>
     </section>
@@ -207,15 +229,16 @@
   <h2>Opportunities</h2>
   <div class="grid">
   {% for o in acct.opportunities %}
-    <div class="card" id="deal-{{ o.id }}">
+    <div class="card" id="deal-{{ o.id | slug }}">
       <div class="card-head">
         <span class="stage stage-{{ o.stage }}">{{ o.stage }}</span>
         <h3>{{ o.title }}</h3>
       </div>
-      <p><span class="muted">Worth up to</span> <span class="num">{{ o.worth_up_to | money }}</span> {{ m.sources([o.id], idx) }}</p>
+      <p><span class="muted">Worth up to</span> <span class="num">{{ o.worth_up_to | money(acct.currency) }}</span> {{ m.sources([o.id], idx) }}</p>
       {% if o.blocker %}
         <p class="blocker {{ o.blocker.status }}">Blocker ({{ o.blocker.status }}): {{ o.blocker.text }}</p>
       {% endif %}
+      {% if o.basis %}<p class="muted">{{ o.basis }}</p>{% endif %}
       {% if o.deadline %}<p><span class="muted">Deadline</span> {{ o.deadline.text }}</p>{% endif %}
       {% if o.evidence %}
         <details>
@@ -237,8 +260,8 @@
     <thead><tr><th>Offer</th><th>Pitch to</th><th class="r">Value</th><th>Status</th></tr></thead>
     <tbody>
     {% for of in acct.offers %}
-      <tr id="offer-{{ of.id }}"><td>{{ of.title }} {{ m.cite(of.id, idx) }}</td><td>{{ of.pitch_to }}</td>
-          <td class="r num">{{ of.value | money }}</td>
+      <tr id="offer-{{ of.id | slug }}"><td>{{ of.title }} {{ m.cite(of.id, idx) }}</td><td>{{ of.pitch_to }}</td>
+          <td class="r num">{{ of.value | money(acct.currency) }}</td>
           <td><span class="stage stage-{{ of.status }}">{{ of.status }}</span></td></tr>
     {% endfor %}
     </tbody>
@@ -249,15 +272,15 @@
     <thead><tr><th>Name</th><th>Role</th><th>Relationship</th><th>Available</th></tr></thead>
     <tbody>
     {% for s in acct.stakeholders %}
-      <tr id="person-{{ s.id }}"><td>{{ s.name }}</td><td>{{ s.role }}</td>
-          <td><span class="rel rel-{{ s.relationship }}">{{ s.relationship }}</span></td>
-          <td>{{ 'Yes' if s.available else 'No' }}</td></tr>
+      <tr id="person-{{ s.id | slug }}"><td>{{ s.name }}</td><td>{{ s.role }}</td>
+          <td><span class="rel rel-{{ s.relationship | slug }}">{{ s.relationship }}</span></td>
+          <td>{{ 'Not on file' if s.available is none else ('Yes' if s.available else 'No') }}</td></tr>
     {% endfor %}
     </tbody>
   </table></div>
 
   <details class="evidence" id="evidence">
-    <summary><h2>Evidence</h2> <span class="muted">{{ acct.facts | length }} facts, {{ files | length }} files</span></summary>
+    <summary><h2>Evidence</h2> <span class="muted">{{ acct.facts | length }} facts, {{ files | length }} files{% if paper %}, {{ paper | length }} paperwork records{% endif %}</span></summary>
     <div class="scroll"><table class="facts">
       <thead><tr><th>Minute</th><th>Fact</th><th>Said by</th><th>Status</th></tr></thead>
       <tbody>
@@ -273,6 +296,15 @@
     {% if files %}
       <h3>Files</h3>
       <ul class="plain">{% for f in files %}<li id="ev-{{ f.id }}">{{ f.title }} <span class="muted">{{ f.path }}</span> {{ m.sources([f.id], idx) }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if paper %}
+      <h3>Paperwork</h3>
+      {% for rid, rec in paper %}
+        <div class="paper-rec" id="paper-{{ rid | slug }}">
+          <h4>{{ rec.path }} <span class="muted small">{{ rec.kind }}</span></h4>
+          <pre class="record">{{ rec.text }}</pre>
+        </div>
+      {% endfor %}
     {% endif %}
   </details>
 </section>
