@@ -5,25 +5,43 @@
 <p class="muted">
   Snapshot exported {{ book.exported_at | when }}.
   <a href="{{ url_for('signals_page') }}">{{ signal_count }} live signal{{ '' if signal_count == 1 else 's' }}</a>.
-  Amounts as given in book.json, which states no currency.
 </p>
 
 <div class="grid">
-{% for a in book.accounts %}
-  {% set pipeline = a.opportunities | map(attribute='worth_up_to') | select | sum %}
-  <div class="card">
+{% for c in cards %}
+  {% set a = c.acct %}
+  <div class="card account-card">
     <div class="card-head">
       <span class="tag">{{ a.id }}</span>
       <h2><a href="{{ url_for('account', account_id=a.id) }}">{{ a.name }}</a></h2>
     </div>
-    <p class="story">{{ m.story(stories[a.id], idx) }}</p>
-    <dl class="stats">
-      <div><dt>Worth up to</dt><dd class="num">{{ pipeline | money }}</dd></div>
+
+    <p class="summary" title="{{ c.summary }}">{{ c.summary }}</p>
+    {% if c.claims %}
+      <a class="claims-badge" href="{{ url_for('account', account_id=a.id) }}"
+         title="Phrases in the official story that are unverified claims. See the Monday brief for detail.">
+        {{ c.claims | length }} claim{{ '' if c.claims | length == 1 else 's' }} unverified</a>
+    {% endif %}
+
+    <dl class="stats stats-money">
+      <div>
+        <dt>Backed</dt>
+        <dd class="num">{{ c.worth.backed_total | money }} {{ m.sources(c.worth.backed_ids, idx) }}</dd>
+        <dd class="stat-note">Won or agreed</dd>
+      </div>
+      <div>
+        <dt>Not yet backed</dt>
+        <dd class="num">{{ c.worth.not_backed_total | money }} {{ m.sources(c.worth.not_backed_ids, idx) }}</dd>
+        <dd class="stat-note">Worth up to</dd>
+      </div>
+    </dl>
+    <dl class="stats stats-count">
       <div><dt>Deals</dt><dd>{{ a.opportunities | length }}</dd></div>
       <div><dt>People</dt><dd>{{ a.stakeholders | length }}</dd></div>
       <div><dt>Facts</dt><dd>{{ a.facts | length }}</dd></div>
     </dl>
-    <p><a href="{{ url_for('account', account_id=a.id) }}">Open the Monday brief</a></p>
+
+    <p class="card-foot"><a href="{{ url_for('account', account_id=a.id) }}">Open the Monday brief</a></p>
   </div>
 {% endfor %}
 </div>

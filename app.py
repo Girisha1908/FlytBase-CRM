@@ -263,6 +263,22 @@ def story_segments(acct, brief, index):
     return [s for s in segments if s["text"].strip() or "claim" in s]
 
 
+def plain_summary(segments):
+    """
+    The home-page summary: the official story without its claim phrases, so an
+    unverified claim is never shown as fact. (The brief page shows the claims.)
+    Leftover fragments are tidied: "14 docks installed," -> "14 docks installed."
+    """
+    parts = []
+    for s in segments:
+        if "claim" in s:
+            continue
+        text = s["text"].strip().rstrip(",").strip()
+        if text:
+            parts.append(text if text[-1] in ".!?" else text + ".")
+    return " ".join(parts)
+
+
 def resolve_when(when, acct):
     """Turn a move's "when" into display text, using only book/signal data."""
     if "deadline" in when:
@@ -415,8 +431,17 @@ def index():
     book = load_book()
     signals = load_signals()
     idx = build_index(book, signals)
-    stories = {a["id"]: story_segments(a, BRIEFS.get(a["id"], {}), idx) for a in book["accounts"]}
-    return render_template("index.html", book=book, signal_count=len(signals), stories=stories, idx=idx)
+    cards = []
+    for a in book["accounts"]:
+        segments = story_segments(a, BRIEFS.get(a["id"], {}), idx)
+        cards.append({
+            "acct": a,
+            # Same totals as the Monday brief's "Book worth" section.
+            "worth": book_worth(a),
+            "summary": plain_summary(segments),
+            "claims": [s["claim"] for s in segments if "claim" in s],
+        })
+    return render_template("index.html", book=book, signal_count=len(signals), cards=cards, idx=idx)
 
 
 @app.route("/account/<account_id>")

@@ -220,9 +220,29 @@ ul.plain li { padding: 5px 0; border-bottom: 1px solid var(--paper); }
 .card { background: var(--sheet); border-radius: 8px; padding: 16px; }
 .card-head { display: flex; gap: 10px; align-items: baseline; }
 .card-head h2, .card-head h3 { margin: 0; font-size: 1.05rem; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); margin: 12px 0; }
+.stats { display: grid; gap: 12px; margin: 12px 0; }
+.stats > div { min-width: 0; }                       /* never let a value spill into the next column */
 .stats dt { font-size: .75rem; color: var(--muted); }
-.stats dd { margin: 0; font-weight: 700; }
+.stats dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.stats-money { grid-template-columns: 1fr 1fr; padding-top: 12px; border-top: 1px solid var(--rule); }
+.stats-money dd.num { font-size: 1.3rem; letter-spacing: -.01em; line-height: 1.25; }
+.stats-money .stat-note { font-size: .75rem; font-weight: 400; color: var(--muted); }
+.stats-money > div:first-child dd.num { color: var(--verified); }
+.stats-count { grid-template-columns: repeat(3, 1fr); }
+
+/* home page account cards */
+.account-card { display: flex; flex-direction: column; }
+.account-card .summary {
+  margin: 10px 0 6px; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.claims-badge {
+  align-self: flex-start; font-size: .75rem; font-weight: 700; text-decoration: none;
+  color: var(--claim); background: var(--claim-bg); border: 1px dashed var(--claim);
+  border-radius: 99px; padding: 1px 10px;
+}
+.claims-badge:hover { background: #FBEAC0; }
+.card-foot { margin: auto 0 0; padding-top: 4px; }
 .blocker.open { color: var(--risk); }
 .blocker.cleared { color: var(--verified); }
 .is-claim { background: var(--claim-bg); }
@@ -241,7 +261,6 @@ details summary { cursor: pointer; }
   .move-meta { grid-template-columns: 1fr 1fr; }
   .moves > li { padding-left: 46px; }
   .live-list li { grid-template-columns: 1fr; gap: 2px; }
-  .stats { grid-template-columns: repeat(2, 1fr); }
   h1 { font-size: 1.6rem; }
 }
 @media (prefers-reduced-motion: reduce) { :target { animation: none; } }
