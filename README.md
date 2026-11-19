@@ -1,14 +1,13 @@
-# FlytBase CRM: Monday brief for two customer accounts
+# Analyst CRM: Monday brief for two customer accounts
 
-A live CRM for a FlytBase customer success manager who has just inherited two accounts:
+A live CRM for a Drone software company's customer success manager who has just inherited two accounts:
 
 - **Eastern Counties Police Alliance**: four police forces, 35 docks, a 300-dock framework tender in preparation
 - **Aldermoor Industrial Group**: 15 plants, 14 docks, a case study planned for a 40-plant sister company
 
 It reads the account data live from the Questathon MCP server and turns it into the brief I would hand my manager on Monday.
 
-**Live CRM:** [add your hosted link]
-**Walkthrough video:** [add your Google Drive link]
+**Live CRM:** https://flytbase-crm-abo8.onrender.com/
 
 ---
 
